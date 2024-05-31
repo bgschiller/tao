@@ -358,10 +358,13 @@ struct WindowClass(*const Class);
 unsafe impl Send for WindowClass {}
 unsafe impl Sync for WindowClass {}
 
+const IS_RESIGING_KEY: &str = "isResigningKey";
+
 lazy_static! {
   static ref WINDOW_CLASS: WindowClass = unsafe {
     let window_superclass = class!(NSWindow);
     let mut decl = ClassDecl::new("TaoWindow", window_superclass).unwrap();
+    decl.add_ivar::<bool>(IS_RESIGING_KEY);
     decl.add_method(
       sel!(canBecomeMainWindow),
       util::yes as extern "C" fn(&Object, Sel) -> BOOL,
@@ -374,8 +377,23 @@ lazy_static! {
       sel!(sendEvent:),
       send_event as extern "C" fn(&Object, Sel, id),
     );
+    decl.add_method(
+      sel!(resignKeyWindow),
+      resign_key_window as extern "C" fn(&mut Object, Sel),
+    );
     WindowClass(decl.register())
   };
+}
+
+extern "C" fn resign_key_window(this: &mut Object, _sel: Sel) {
+  // set an instance variable to indicate that the window is in the process of resigning key
+  // This is used in wry to support capturing mouse events even when the window is not key
+  unsafe {
+    this.set_ivar(IS_RESIGING_KEY, YES);
+    let superclass = util::superclass(this);
+    let _: () = msg_send![super(this, superclass), resignKeyWindow];
+    this.set_ivar(IS_RESIGING_KEY, NO);
+  }
 }
 
 extern "C" fn send_event(this: &Object, _sel: Sel, event: id) {
